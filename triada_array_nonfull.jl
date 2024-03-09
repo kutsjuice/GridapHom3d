@@ -13,6 +13,29 @@ struct TriadaArray
     sfnum::Int64 # actual number of fibers on each basic plane. Range from 1 to meshsize^2
 end
 
+Random.seed!(100)
+
+function create_plate_selection_bbox(dir, pos, size, eps = 1e-3)
+    
+    mask = [1,2,3] .== dir;
+    bbox_start = Vector{Float64}(undef, 3);
+    bbox_end = Vector{Float64}(undef, 3);
+
+    bbox_start[mask] .= pos;
+    bbox_start[.!mask] .= -size/2;
+    bbox_start .-= eps;
+    
+    bbox_end[mask] .= pos;
+    bbox_end[.!mask] .= size/2;
+    bbox_end .+= eps;
+
+    bbox = [
+        bbox_start;
+        bbox_end;
+    ]
+    return bbox;
+end
+
 # function, which calculates cartesian indices (i,j) on rectangular grid by absolute index (k)
 function abs2cartesian(inds::AbstractVector{<:Integer}, meshsize::Integer)::Vector{Tuple{Int64, Int64}}
     res_ = Vector{Tuple{Int64, Int64}}(undef, length(inds));
@@ -132,20 +155,19 @@ diam = 25.5/1000
 intersection = 0.25;
 
 
-repnum = 6;
+repnum = 4;
 step = 50/1000 # 
 # step = 0.549; # porosity 0.7
 # step = 0.474; # porosity 0.6
 # step = 0.423; # porosity 0.5
-fibnum = 12;
+fibnum = 10;
 
-width = step*repnum;
-height = step*repnum;
-depth = step*repnum;
+cell_size = step*repnum;
 
-bounds = SMatrix{3,2, Float64}([-width/2  width/2;
-                                -height/2 height/2;
-                                -depth/2  depth/2])
+
+bounds = SMatrix{3,2, Float64}([-cell_size/2  cell_size/2;
+                                -cell_size/2  cell_size/2;
+                                -cell_size/2  cell_size/2])
 
 network = TriadaArray(bounds, [0,0,0], diam, intersection, repnum, step, fibnum)
 
@@ -154,7 +176,7 @@ network = TriadaArray(bounds, [0,0,0], diam, intersection, repnum, step, fibnum)
 try
     gmsh.initialize()
 
-    # gmsh.option.setNumber("General.Terminal", 0);
+    gmsh.option.setNumber("General.Terminal", 0);
     KK=12;
     # meshsize = 1000*(width^3)/(sqrt(2)^i)
     MSFC = 3;
@@ -170,32 +192,62 @@ try
     bodies = addTriadaArray(network);
 
     vₛ = gmsh.model.occ.getMass(bodies[1][1]...);
-    vₜ = width*depth*height;
+    vₜ = cell_size^3;
     
     por = 1 - vₛ/vₜ;
     # println("Porosity = $(1 - vₛ/vₜ)");
 
     # println("Bodies = ", bodies)        
-    cutters = []
-    push!(cutters, (3, gmsh.model.occ.addBox(4*bounds[1,1], 4*bounds[2,1], 4*bounds[3,1], 3*width/2, 3*height, 3*depth)));
-    for i in 1:3
-        push!(cutters, gmsh.model.occ.copy([cutters[end]])[1]);
-        rot = gmsh.model.occ.rotate([cutters[end]], 0, 0, 0, 0, 0, 1, π/2);
-    end
-    push!(cutters, gmsh.model.occ.copy([cutters[end]])[1]);
-    gmsh.model.occ.rotate(cutters[end], 0, 0, 0, 1, 0, 0, π/2);
-    push!(cutters, gmsh.model.occ.copy([cutters[end]])[1]);
-    gmsh.model.occ.rotate(cutters[end], 0, 0, 0, 1, 0, 0, π);
+    # cutters = []
+    # push!(cutters, (3, gmsh.model.occ.addBox(4*bounds[1,1], 4*bounds[2,1], 4*bounds[3,1], 3*cell_size/2, 3*cell_size, 3*cell_size)));
+    # for i in 1:3
+    #     push!(cutters, gmsh.model.occ.copy([cutters[end]])[1]);
+    #     rot = gmsh.model.occ.rotate([cutters[end]], 0, 0, 0, 0, 0, 1, π/2);
+    # end
+    # push!(cutters, gmsh.model.occ.copy([cutters[end]])[1]);
+    # gmsh.model.occ.rotate(cutters[end], 0, 0, 0, 1, 0, 0, π/2);
+    # push!(cutters, gmsh.model.occ.copy([cutters[end]])[1]);
+    # gmsh.model.occ.rotate(cutters[end], 0, 0, 0, 1, 0, 0, π);
 
-    gmsh.model.occ.cut(bodies[1][1], cutters)
+    # gmsh.model.occ.cut(bodies[1][1], cutters)
 
 
     # gmsh.model.occ.cut(volumes, cutters)
 
     gmsh.model.occ.synchronize()
+    
+        #select left boundaries
+    dir = 1;
+    lbb = create_plate_selection_bbox(dir, bounds[dir, 1], cell_size*2);
+    left = gmsh.model.getEntitiesInBoundingBox(lbb...,2)
+    #select right boundaries
+    rbb = create_plate_selection_bbox(dir, bounds[dir, 2], cell_size*2);
+    right = gmsh.model.getEntitiesInBoundingBox(rbb..., 2)
+
+    translation = [
+        1, 0, 0, cell_size, 
+        0, 1, 0, 0, 
+        0, 0, 1, 0, 
+        0, 0, 0, 1
+        ];
+
+    left_faces = [dimtag[2] for dimtag in left]
+    right_faces = [dimtag[2] for dimtag in right]
+    
+    println(left_faces)
+    println(right_faces)
+
+
+
+    # gmsh.model.mesh.setPeriodic(2,  right_faces, left_faces, translation)
+
+
+
+    fabric.synchronize()
+   
     gmsh.model.mesh.generate(3)
     subdir="realizations/"
-    filename = "POROSITY=$(round(por, digits=3))_DIAM=$(round(diam,digits=5))_FILLNES=$(round(fibnum/repnum^2, digits=3))_00";
+    filename = "periodic2";
     files = readdir(subdir)
     if filename*".msh" in files
         i=1;
