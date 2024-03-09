@@ -143,6 +143,7 @@ gmsh.option.setNumber("Mesh.MeshSizeMin", diam/10);
 
 model.mesh.generate(3)
 gmsh.write("periodic.vtk")
+gmsh.write("periodic.msh")
 
 # Launch the GUI to see the results:
 # if !("-nopopup" in ARGS)

@@ -2,3 +2,7 @@
 *.msh
 *.h5
 *.xdmf
+*.vtu
+*.pvd
+*.pvtu
+results/*

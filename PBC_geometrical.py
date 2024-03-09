@@ -23,7 +23,7 @@ import numpy as np
 import scipy.sparse.linalg
 from dolfinx import default_scalar_type
 from dolfinx.common import Timer, TimingType, list_timings
-from dolfinx.io import XDMFFile
+from dolfinx.io import VTKFile
 from dolfinx.mesh import create_unit_square, locate_entities_boundary
 from ufl import (SpatialCoordinate, TestFunction, TrialFunction, as_vector, dx,
                  exp, grad, inner, pi, sin)
@@ -124,7 +124,8 @@ outdir = Path("results")
 outdir.mkdir(exist_ok=True, parents=True)
 
 uh.name = "u_mpc"
-outfile = XDMFFile(mesh.comm, outdir / "demo_periodic_geometrical.xdmf", "w")
+outfile = VTKFile(mesh.comm, outdir / "demo_periodic_geometrical.vtk", "w")
+# outfile = VTKFile
 outfile.write_mesh(mesh)
 outfile.write_function(uh)
 
