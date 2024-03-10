@@ -106,9 +106,23 @@ else:
 # Set PETSc options
 opts = PETSc.Options()  # type: ignore
 opts.prefixPush(solver_prefix)
-if petsc_options is not None:
-    for k, v in petsc_options.items():
-        opts[k] = v
+# if petsc_options is not None:
+#     for k, v in petsc_options.items():
+#         opts[k] = v
+
+# set gamg options
+opts["ksp_type"] = "cg";
+opts["ksp_rtol"] = 1.0e-7;
+opts["pc_type"] = "gamg"; # geometric algebraic multigrid preconditioner
+
+# Use Chebyshev smothing for multigrid
+opts["mg_levels_ksp_type"] = "chebyshev";
+opts["mg_levels_pc_type"] = "jacobi";
+
+# Improve estimation of eigenvalues for Chebyshev smoothing
+opts["mg_levels_esteig_ksp_type"] = "cg";
+opts["mg_levels_ksp_chebyshev_esteig_steps"] = 20;
+
 opts.prefixPop()
 solver.setFromOptions()
 
@@ -120,7 +134,7 @@ with Timer("~PERIODIC: Assemble and solve MPC problem"):
     print("Constrained solver iterations {0:d}".format(it))
 
 # Write solution to file
-outdir = Path("results")
+outdir = Path("results_gamg")
 outdir.mkdir(exist_ok=True, parents=True)
 
 uh.name = "u_mpc"

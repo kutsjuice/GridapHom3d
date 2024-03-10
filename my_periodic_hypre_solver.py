@@ -5,6 +5,8 @@ from inspect import currentframe, getframeinfo
 cf = currentframe()
 filename = getframeinfo(cf).filename
 
+from typing import Union
+from pathlib import Path
 
 from mpi4py import MPI;
 from petsc4py import PETSc
@@ -12,6 +14,8 @@ from petsc4py import PETSc
 from dolfinx import mesh, fem, plot, io, la;
 
 from dolfinx.fem.petsc import apply_lifting, assemble_matrix, assemble_vector, set_bc
+import dolfinx_mpc.utils
+from dolfinx_mpc import LinearProblem, MultiPointConstraint
 from dolfinx.io import XDMFFile, gmshio;
 import dolfinx.geometry as geo;
 import gmsh;
@@ -149,21 +153,7 @@ def main():
     gmsh.finalize()
     print("MESH IMPORTED")
     print("NUMBER OF NODES:", msh.geometry.x.shape[0])
-    # with io.XDMFFile(msh.comm, "out/imported_mesh.xdmf", "w") as file:
-    #     file.write_mesh(msh)
-    #     file.write_meshtags(cell_markers)
-    #     msh.topology.create_connectivity(msh.topology.dim - 1, msh.topology.dim)
-    #     file.write_meshtags(facet_markers)
-        
-
-
-    V = fem.VectorFunctionSpace(msh, ("CG", ORDER))
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    f = fem.Constant(msh, PETSc.ScalarType((0., 0., 0.)))
-    A = fem.form(ufl.inner(sigma(u), epsilon(v)) * ufl.dx(metadata={"quadrature_degree": ORDER}))
-    L = fem.form(ufl.dot(f, v) * ufl.dx(metadata={"quadrature_degree": ORDER})) #+ ufl.dot(T, v) * ds
-    
+   
     eps = np.linalg.norm(np.array(bbox[0:3]) + np.array(bbox[3:]));
     
     unit_disp =np.mean(np.array(bbox[3:]) - np.array(bbox[:3]));
@@ -226,49 +216,10 @@ def main():
                                 fdim, 
                                 marked_facets[facets_order],
                                 markers[facets_order]);
-
-    ds = ufl.Measure('ds', domain=msh, subdomain_data=facets_tags, metadata={'quadrature_degree': ORDER});
     
-    
-    m_σ = np.zeros((6,6), dtype = np.float64);
-    m_ε = np.zeros((6,6), dtype = np.float64);
-    
+    VF_space = fem.VectorFunctionSpace(msh, ("CG", ORDER))
+    ds = ufl.Measure('ds', domain=msh, subdomain_data=facets_tags, metadata={'quadrature_degree': ORDER});    
     dx = ufl.Measure('dx', domain=msh, metadata={'quadrature_degree': ORDER});
-    volume = fem.assemble_scalar(fem.form(fem.Constant(msh, PETSc.ScalarType(1.0)) * dx()));
-    
-    # set solver options
-    opts = PETSc.Options();
-    # set gamg options
-    opts["ksp_type"] = "cg";
-    opts["ksp_rtol"] = 1.0e-7;
-    opts["pc_type"] = "gamg"; # geometric algebraic multigrid preconditioner
-
-    # Use Chebyshev smothing for multigrid
-    opts["mg_levels_ksp_type"] = "chebyshev";
-    opts["mg_levels_pc_type"] = "jacobi";
-
-    # Improve estimation of eigenvalues for Chebyshev smoothing
-    opts["mg_levels_esteig_ksp_type"] = "cg";
-    opts["mg_levels_ksp_chebyshev_esteig_steps"] = 20;
-    
-    # set hypre options
-#     opts["ksp_type"] = "cg";
-#     opts["ksp_rtol"] = 1.0e-7;
-#     opts["pc_type"] = "hypre"; # geometric algebraic multigrid preconditioner
-
-#     opts["pc_hypre_type"] = "boomeramg";
-#     opts["pc_hypre_boomeramg_max_iter"] = 1;
-#     opts["pc_hypre_boomeramg_cycle_type"] = "v";
-#     opts["pc_hypre_boomeramg_print_statistics"] = 1;
-
-    
-    # Create PETSc Krylov solver and turn convergence monitoring on
-    solver = PETSc.KSP().create(msh.comm);
-    solver.setFromOptions();
-    solver.setMonitor(lambda _, its, rnorm: print(f"Iteration: {its}, rel. residual: {rnorm}"));
-    ns = build_nullspace(V);
-
-    print("SOLVER IS SET UP")
 
     # Set displacements for Dirichlet BC
 
@@ -282,121 +233,101 @@ def main():
     # full_bc = lambda x: KUBC(x, i,j, unit_disp);  # <--- functions which will be interpolated over domain
     # ub_.interpolate(full_bc);                     # <--- computed displacements
 
-
-    # select dof, to which DBC will be applied
-    # nonbottom_dofs = fem.locate_dofs_topological(V,
-    #                                             facets_tags.dim,
-    #                                             marked_facets);
-    shifted_dofs = fem.locate_dofs_topological(V, 
+    shifted_dofs = fem.locate_dofs_topological(VF_space, 
                                                fdim,
                                                right_facets);
-    fixed_dofs = fem.locate_dofs_topological(V,
+    fixed_dofs = fem.locate_dofs_topological(VF_space,
                                            fdim,
                                            left_facets);
     
-    # bc_ = fem.dirichletbc(ub_, nonbottom_dofs);
-    shifted_bc = fem.dirichletbc(shifted_u, shifted_dofs, V);
-    fixed_bc = fem.dirichletbc(fixed_u, fixed_dofs, V);
+    top_dofs = fem.locate_dofs_topological(VF_space, 
+                                           fdim, 
+                                           back_facets);
+    bottom_dofs = fem.locate_dofs_topological(VF_space,
+                                              fdim,
+                                              front_facets);
+    
+    shifted_bc = fem.dirichletbc(shifted_u, shifted_dofs, VF_space);
+    fixed_bc = fem.dirichletbc(fixed_u, fixed_dofs, VF_space);
 
     bc_combined = [fixed_bc, shifted_bc]
 
-    K = assemble_matrix(A, bcs=bc_combined);
-    K.assemble()
-    K.setNearNullSpace(ns);
-    
-    
-    b = assemble_vector(L);
-    apply_lifting(b, [A], bcs=[bc_combined]);
-    b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE);
-    set_bc(b, bc_combined)
+    cords_of_top_dofs = msh.geometry.x[top_dofs];
+    cords_of_bottom_dofs = msh.geometry.x[bottom_dofs];
 
+    for bottom
 
-    # # Define variational problem
-    # u = TrialFunction(V)
-    # v = TestFunction(V)
-    # a = inner(grad(u), grad(v)) * dx
+    ## let the back nodes are primary and the front are secondary
+    def locate_secondary(x):
+        return front(x)
 
-    # x = SpatialCoordinate(mesh)
-    # dx_ = x[0] - 0.9
-    # dy_ = x[1] - 0.5
-    # f = as_vector((x[0] * sin(5.0 * pi * x[1]) + 1.0 * exp(-(dx_ * dx_ + dy_ * dy_) / 0.02), 0.3 * x[1]))
+    # bbox[1] - lower boundary
+    # bbox[4] - upper boundary
+    def periodic_relation(x):
+        out_x = np.zeros_like(x)
+        out_x[0] = x[0]
+        out_x[1] = x[1] + (bbox[1] - bbox[4])
+        out_x[2] = x[2]
+        return out_x
+   
+    mpc = MultiPointConstraint(VF_space)
+    mpc.create_periodic_constraint_geometrical(VF_space, locate_secondary, periodic_relation, bc_combined)
+    mpc.finalize()
 
-    # rhs = inner(f, v) * dx
+    mpc.add_constraint()
 
+    print("MPC coeffs::", mpc.coefficients())
+    # Define variational problem
+    u_trial_function = ufl.TrialFunction(VF_space)
+    v_test_function = ufl.TestFunction(VF_space)
 
-    # # Setup MPC system
-    # with Timer("~PERIODIC: Initialize varitional problem"):
-    #     problem = LinearProblem(a, rhs, mpc, bcs=bcs)
+    f = fem.Constant(msh, PETSc.ScalarType((0., 0., 0.)))
 
-    # solver = problem.solver
+    Bil_form = fem.form(ufl.inner(sigma(u_trial_function), epsilon(v_test_function)) * ufl.dx(metadata={"quadrature_degree": ORDER}))
+    Lin_form = fem.form(ufl.dot(f, v_test_function) * ufl.dx(metadata={"quadrature_degree": ORDER})) #+ ufl.dot(T, v) * ds
 
-    
-    uh = fem.Function(V);
-    # Set matrix operator
-    solver.setOperators(K)
-    # Set a monitor, solve linear system and display the solver
-    # configuration
-    
-    solver.solve(b, uh.vector);
-    solver.view();
+    # Setup MPC system
 
-    # Scatter forward the the solution ector to update ghost values
-    uh.x.scatter_forward()
-    
-    uh.name = "Deformation"
-      
+    problem = LinearProblem(Bil_form, Lin_form, mpc, bcs=bc_combined)
 
-    with io.VTKFile(msh.comm, "deformation.pvd", "w") as vtk:
+    solver = problem.solver
+
+    # Give PETSc solver options a unique prefix
+    solver_prefix = "dolfinx_mpc_solve_{}".format(id(solver))
+    solver.setOptionsPrefix(solver_prefix)
+
+    petsc_options: dict[str, Union[str, int, float]]
+    petsc_options = {"ksp_type": "cg", "ksp_rtol": 1e-6, "pc_type": "hypre", "pc_hypre_type": "boomeramg",
+                    "pc_hypre_boomeramg_max_iter": 1, "pc_hypre_boomeramg_cycle_type": "v"  # ,
+                    # "pc_hypre_boomeramg_print_statistics": 1
+                    }
+
+    # Set PETSc options
+    opts = PETSc.Options()  # type: ignore
+    opts.prefixPush(solver_prefix)
+
+    if petsc_options is not None:
+        for k, v in petsc_options.items():
+            opts[k] = v
+
+    opts.prefixPop()
+    solver.setFromOptions()
+
+    uh = problem.solve()
+    # solver.view()
+    it = solver.getIterationNumber()
+    print("Constrained solver iterations {0:d}".format(it))
+
+    # Write solution to file
+    outdir = Path("results_my_periodic")
+    outdir.mkdir(exist_ok=True, parents=True)
+
+    uh.name = "u_mpc"     
+
+    with io.VTKFile(msh.comm, outdir / "demo_periodic_geometrical.vtk", "w") as vtk:
         vtk.write_mesh(msh)
         vtk.write_function(uh)
-
-    
-    # for i in range(3):
-    #     for j in range(i,3):
-
-    #         ub_ = fem.Function(V);
-    #         full_bc = lambda x: KUBC(x, i,j, unit_disp);
-    #         ub_.interpolate(full_bc);
-    #         nonbottom_dofs = fem.locate_dofs_topological(V,
-    #                                                  facets_tags.dim,
-    #                                                  marked_facets);
-    #         bc_ = fem.dirichletbc(ub_, nonbottom_dofs);
-
-    #         A = fem.petsc.assemble_matrix(A, bcs=[bc_]);
-    #         A.assemble()
-    #         A.setNearNullSpace(ns);
-            
-    #         b = fem.petsc.assemble_vector(L);
-    #         fem.petsc.apply_lifting(b, [A], bcs=[[bc_]]);
-    #         b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE);
-    #         fem.petsc.set_bc(b, [bc_])
-            
-    #         uh = fem.Function(V);
-    #         # Set matrix operator
-    #         solver.setOperators(A)
-    #         # Set a monitor, solve linear system and display the solver
-    #         # configuration
-            
-    #         solver.solve(b, uh.vector);
-    #         solver.view();
-
-    #         # Scatter forward the the solution ector to update ghost values
-    #         uh.x.scatter_forward()
-
-    #         for (k, case) in enumerate(["xx", "yy", "zz", "yz", "xz", "xy"]):
-    #             ϵ_i = fem.assemble_scalar(fem.form(strein2Voigt(epsilon(uh))[k]*dx)) / volume;
-    #             σ_i = fem.assemble_scalar(fem.form(stress2Voigt(sigma(uh))[k]*dx)) / volume;
-    #             m_σ[indexVoigt(i, j), k] = σ_i;
-    #             m_ε[indexVoigt(i, j), k] = ϵ_i;
-    #             print("ε{} = {}; σ{} = {} ".format(case, ϵ_i, case, σ_i));
-    
-    
-    # # np.savetxt("out/"+sys.argv[1], np.vstack((m_ε,m_σ)) , delimiter = ", ")
-    # np.savetxt("out/"+sys.argv[1], m_σ, delimiter = ", ");    
-    
-    
-    
-    
+  
 
 if __name__=="__main__":
     main();
