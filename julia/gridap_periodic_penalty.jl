@@ -52,8 +52,8 @@ function get_nodes_in_bounding_box(model, bounding_box)
             node_coordinates[i][3] <= bounding_box[6];
     end
     return findall(nodes_in_bbox)
-    
 end
+
 cell_size = 0.5
 left_face_bbox = [
     -cell_size/2 - 1e-3,
