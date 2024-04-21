@@ -1,6 +1,3 @@
-using LinearAlgebra
-using SparseArrays
-
 # 1------2------3
 # |      |      |
 # |      |      |
