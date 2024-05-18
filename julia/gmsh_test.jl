@@ -1,13 +1,3 @@
-# ------------------------------------------------------------------------------
-#
-#  Gmsh Julia tutorial 18
-#
-#  Periodic meshes
-#
-# ------------------------------------------------------------------------------
-
-# Periodic meshing constraints can be imposed on surfaces and curves.
-
 using Gmsh
 
 
@@ -110,28 +100,44 @@ end
 
 gmsh.initialize()
 
-gmsh.model.add("t18")
+gmsh.model.add("three_cross")
 model = gmsh.model;
-# Let's use the OpenCASCADE geometry kernel to build two geometries.
-
-# The first geometry is very simple: a unit cube with a non-uniform mesh size
-# constraint (set on purpose to be able to verify visually that the periodicity
-# constraint works!):
 
 diam = 0.1;
 
 cell_size = 0.5;
 
-
-add_normal_periodic_cylinder(model, 1, [-0.05, 0.05], cell_size, diam);
-add_normal_periodic_cylinder(model, 2, [-0.05, 0.05], cell_size, diam);
-add_normal_periodic_cylinder(model, 3, [-0.05, 0.05], cell_size, diam);
+offset = 0.05
+add_normal_periodic_cylinder(model, 1, [-offset, offset], cell_size, diam);
+add_normal_periodic_cylinder(model, 2, [-offset, offset], cell_size, diam);
+add_normal_periodic_cylinder(model, 3, [-offset, offset], cell_size, diam);
 
 model.occ.synchronize()
 
 dimtags = model.getEntities(3)
 model.occ.fuse(dimtags[1:end-1], dimtags[end:end])
 model.occ.synchronize()
+
+EPS = 1e-2
+min_value = -diam/2 - EPS - offset
+max_value = diam/2 + EPS + offset
+center_intesection_bbox = [
+    min_value, 
+    min_value, 
+    min_value, 
+    max_value, 
+    max_value, 
+    max_value
+]
+
+model.getEntitiesInBoundingBox(center_intesection_bbox..., 2)
+
+
+# Launch the GUI to see the results:
+if !("-nopopup" in ARGS)
+    gmsh.fltk.run()
+end
+
 
 make_periodic_cell(model, cell_size);
 model.occ.synchronize()
@@ -144,7 +150,6 @@ central_point = model.occ.addPoint(0, 0, 0, 0.0001, 100);
 model.occ.synchronize()
 
 model.addPhysicalGroup(0, [100], -1, "center")
-
 
 model.mesh.embed(0, [100], volume[1][1], volume[1][2])
 

@@ -90,26 +90,7 @@ function get_nodes_in_bounding_box(model, bounding_box)
     return findall(nodes_in_bbox)
 end
 
-function create_plate_selection_bbox(dir, pos, size, eps = 1e-3)
-    
-    mask = [1,2,3] .== dir;
-    bbox_start = Vector{Float64}(undef, 3);
-    bbox_end = Vector{Float64}(undef, 3);
 
-    bbox_start[mask] .= pos;
-    bbox_start[.!mask] .= -size/2;
-    bbox_start .-= eps;
-    
-    bbox_end[mask] .= pos;
-    bbox_end[.!mask] .= size/2;
-    bbox_end .+= eps;
-
-    bbox = [
-        bbox_start;
-        bbox_end;
-    ]
-    return bbox;
-end
 
 
 gmsh.initialize()
