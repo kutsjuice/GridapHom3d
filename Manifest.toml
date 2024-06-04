@@ -2,7 +2,7 @@
 
 julia_version = "1.9.2"
 manifest_format = "2.0"
-project_hash = "f538c482b9e69bedcd3e1d899a6c2a3ace0c22b3"
+project_hash = "5055d766e0b107273535c6494a5bcfcaed66a257"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "016833eb52ba2d6bea9fcb50ca295980e728ee24"
@@ -687,6 +687,12 @@ git-tree-sha1 = "c964ac0bcd28b03c315aa73bee03d7aa4900bbcf"
 uuid = "3025c34a-b394-11e9-2a55-3fee550c04c8"
 version = "0.7.0"
 
+[[deps.GridapPETSc]]
+deps = ["Gridap", "GridapDistributed", "Libdl", "LinearAlgebra", "MPI", "PETSc_jll", "PartitionedArrays", "Random", "SparseArrays", "SparseMatricesCSR"]
+git-tree-sha1 = "549d0dce1a8051e6cd2c6dc4edcf0422d48ceecb"
+uuid = "bcdc36c2-0c3e-11ea-095a-c9dadae499f1"
+version = "0.5.2"
+
 [[deps.Grisu]]
 git-tree-sha1 = "53bb909d1151e57e2484c3d1b53e19552b887fb2"
 uuid = "42e2da0e-8278-4e71-bc24-59509adca0fe"
@@ -1327,6 +1333,12 @@ git-tree-sha1 = "887579a3eb005446d514ab7aeac5d1d027658b8f"
 uuid = "e7412a2a-1a6e-54c0-be00-318e2571c051"
 version = "1.3.5+1"
 
+[[deps.OpenBLAS32_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "Pkg"]
+git-tree-sha1 = "2fb9ee2dc14d555a6df2a714b86b7125178344c2"
+uuid = "656ef2d0-ae68-5445-9ca0-591084a874a2"
+version = "0.3.21+0"
+
 [[deps.OpenBLAS_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
 uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
@@ -1400,6 +1412,12 @@ deps = ["LinearAlgebra", "SparseArrays", "SuiteSparse"]
 git-tree-sha1 = "949347156c25054de2db3b166c52ac4728cbad65"
 uuid = "90014a1f-27ba-587c-ab20-58faa44d9150"
 version = "0.11.31"
+
+[[deps.PETSc_jll]]
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "MPICH_jll", "MicrosoftMPI_jll", "OpenBLAS32_jll", "Pkg"]
+git-tree-sha1 = "8384198eba24438cee406ec7ca8854acdcbbd2c8"
+uuid = "8fa3689e-f0b9-5420-9873-adf6ccf46f2d"
+version = "3.15.2+0"
 
 [[deps.PMIx_jll]]
 deps = ["Artifacts", "Hwloc_jll", "JLLWrappers", "Libdl", "Zlib_jll", "libevent_jll"]
